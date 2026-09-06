@@ -275,8 +275,26 @@
   transform: scale(1.1);
 }
   </style>
-  <script type="module">
-    // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+<script type="module">
+
+import { initializeApp } from
+  "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
+
+import { getAnalytics } from
+  "https://www.gstatic.com/firebasejs/12.18.0/firebase-analytics.js";
+
+import {
+  getDatabase,
+  ref,
+  onChildAdded,
+  push,
+  remove
+} from
+  "https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js";
+
+
+/* ================= FIREBASE CONFIG ================= */
+
 const firebaseConfig = {
   apiKey: "AIzaSyBYpNCS3vUuLAyilFplDO4KTiO7ZIpfN5U",
   authDomain: "dj420-ced11.firebaseapp.com",
@@ -288,117 +306,442 @@ const firebaseConfig = {
   measurementId: "G-CWBNENX9LD"
 };
 
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-  const analytics = getAnalytics(app);
-  const db = getDatabase(app);
-  const chatRef = ref(db, "chatroom");
 
-  const allowedUsers = ["Me", "Queen"];
-  const params = new URLSearchParams(window.location.search);
-  let username = params.get("user") || prompt("Enter your username:");
+/* ================= INITIALIZE FIREBASE ================= */
 
-  if (!allowedUsers.includes(username)) {
-    alert("❌ Access Denied. Only authorized users can access this chat.");
-    document.body.innerHTML = "<h2 style='text-align:center;color:red;'>❌ Access Denied</h2>";
-    throw new Error("Unauthorized user");
+const app = initializeApp(firebaseConfig);
+
+const analytics = getAnalytics(app);
+
+const db = getDatabase(app);
+
+const chatRef = ref(db, "chatroom");
+
+
+/* ================= USERS ================= */
+
+const allowedUsers = ["Me", "Queen"];
+
+const params =
+  new URLSearchParams(window.location.search);
+
+
+/*
+   First check sessionStorage.
+   Then check ?user= from the login page.
+   Only use prompt as a fallback.
+*/
+
+let username =
+  sessionStorage.getItem("chatUsername") ||
+  params.get("user");
+
+
+if (!username) {
+
+  username = prompt("Enter your username:");
+
+}
+
+
+if (!username) {
+
+  alert("❌ Please enter your username.");
+
+  window.location.replace("login.html");
+
+  throw new Error("No username");
+
+}
+
+
+username = username.trim();
+
+
+/* ================= ACCESS CHECK ================= */
+
+const matchedUser =
+  allowedUsers.find(
+    user =>
+      user.toLowerCase() ===
+      username.toLowerCase()
+  );
+
+
+if (!matchedUser) {
+
+  alert(
+    "❌ Access Denied. Only authorized users can access this chat."
+  );
+
+  document.body.innerHTML =
+    "<h2 style='text-align:center;color:red;'>❌ Access Denied</h2>";
+
+  throw new Error("Unauthorized user");
+
+}
+
+
+/*
+   Use the official username:
+   "me" becomes "Me"
+   "queen" becomes "Queen"
+*/
+
+username = matchedUser;
+
+sessionStorage.setItem(
+  "chatUsername",
+  username
+);
+
+
+/* ================= LOAD MESSAGES ================= */
+
+onChildAdded(chatRef, (data) => {
+
+  const msg = data.val();
+
+  const key = data.key;
+
+
+  if (!msg || !allowedUsers.includes(msg.user)) {
+    return;
   }
 
-  onChildAdded(chatRef, (data) => {
-    const msg = data.val();
-    const key = data.key;
 
-    if (allowedUsers.includes(msg.user)) {
-      const msgElem = document.createElement("div");
-      msgElem.className = "message " + (msg.user === username ? "me" : "other");
+  const msgElem =
+    document.createElement("div");
 
-      msgElem.innerHTML = `
-        <span class="username">${msg.user}</span>
-        ${msg.text}
-        <div class="time">${msg.time || ''}</div>
-      `;
 
-      // Double-click to reply
-      msgElem.ondblclick = () => {
-        document.getElementById("replyBox").style.display = "block";
-        document.getElementById("replyUser").textContent = msg.user;
-        document.getElementById("replyText").textContent = msg.text;
-      };
+  msgElem.className =
+    "message " +
+    (msg.user === username ? "me" : "other");
 
-      // Click to delete your own message
-      if (msg.user === username) {
-        msgElem.style.cursor = "pointer";
-        msgElem.title = "Click to delete";
-        msgElem.onclick = () => {
-          if (confirm("🗑️ Delete this message?")) {
-            const delRef = ref(db, "chatroom/" + key);
-            remove(delRef)
-              .then(() => msgElem.remove())
-              .catch(err => alert("❌ Error: " + err.message));
-          }
-        };
+
+  msgElem.innerHTML = `
+    <span class="username">
+      ${msg.user}
+    </span>
+
+    ${msg.text || ""}
+
+    <div class="time">
+      ${msg.time || ""}
+    </div>
+  `;
+
+
+  /* ================= REPLY ================= */
+
+  msgElem.ondblclick = () => {
+
+    document.getElementById("replyBox").style.display =
+      "block";
+
+    document.getElementById("replyUser").textContent =
+      msg.user;
+
+    document.getElementById("replyText").textContent =
+      msg.text || "";
+
+  };
+
+
+  /* ================= DELETE OWN MESSAGE ================= */
+
+  if (msg.user === username) {
+
+    msgElem.style.cursor = "pointer";
+
+    msgElem.title = "Click to delete";
+
+    msgElem.onclick = () => {
+
+      if (
+        confirm("🗑️ Delete this message?")
+      ) {
+
+        const delRef =
+          ref(db, "chatroom/" + key);
+
+        remove(delRef)
+
+          .then(() => {
+            msgElem.remove();
+          })
+
+          .catch(err => {
+            alert(
+              "❌ Error: " +
+              err.message
+            );
+          });
+
       }
 
-      document.getElementById("chatBox").appendChild(msgElem);
-      document.getElementById("chatBox").scrollTop = chatBox.scrollHeight;
-    }
-  });
+    };
 
-  window.sendMessage = function () {
-    const input = document.getElementById("messageInput");
-    const text = input.value.trim();
-    if (!text) return;
-
-    const replyTo = document.getElementById("replyText").textContent;
-    const replyUser = document.getElementById("replyUser").textContent;
-    const isReplying = document.getElementById("replyBox").style.display === "block";
-
-    let fullMessage = text;
-    if (isReplying) {
-      fullMessage = `<div class="quoted">↪️ ${replyUser}: ${replyTo}</div>${text}`;
-    }
-
-    push(chatRef, {
-      user: username,
-      text: fullMessage,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    });
-
-    input.value = "";
-    cancelReply();
-  };
-  window.sendImage = function (input) {
-  const file = input.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = function (e) {
-    push(chatRef, {
-      user: username,
-      text: `<img src="${e.target.result}" class="chatImage" />`,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    });
-    input.value = ""; // Reset so it won't resend the same image
-  };
-  reader.readAsDataURL(file);
-};
-  window.cancelReply = function () {
-    document.getElementById("replyBox").style.display = "none";
-    document.getElementById("replyUser").textContent = "";
-    document.getElementById("replyText").textContent = "";
-  };
-
-  function toggleTheme() {
-    document.body.classList.toggle("light");
   }
 
-  window.clearAllMessages = function () {
-    if (confirm("⚠️ Delete all chat messages?")) {
-      remove(chatRef)
-        .then(() => alert("✅ All messages deleted!"))
-        .catch(err => alert("❌ Error: " + err.message));
-    }
+
+  document
+    .getElementById("chatBox")
+    .appendChild(msgElem);
+
+
+  const chatBox =
+    document.getElementById("chatBox");
+
+
+  chatBox.scrollTop =
+    chatBox.scrollHeight;
+
+});
+
+
+/* ================= SEND TEXT MESSAGE ================= */
+
+window.sendMessage = function () {
+
+  const input =
+    document.getElementById("messageInput");
+
+
+  const text =
+    input.value.trim();
+
+
+  if (!text) {
+    return;
+  }
+
+
+  const replyBox =
+    document.getElementById("replyBox");
+
+
+  const replyText =
+    document.getElementById("replyText").textContent;
+
+
+  const replyUser =
+    document.getElementById("replyUser").textContent;
+
+
+  const isReplying =
+    replyBox.style.display === "block";
+
+
+  let fullMessage =
+    escapeHTML(text);
+
+
+  if (isReplying) {
+
+    fullMessage =
+      `<div class="quoted">
+        ↪️ ${escapeHTML(replyUser)}:
+        ${escapeHTML(replyText)}
+      </div>
+      ${escapeHTML(text)}`;
+
+  }
+
+
+  push(chatRef, {
+
+    user: username,
+
+    text: fullMessage,
+
+    time:
+      new Date().toLocaleTimeString(
+        [],
+        {
+          hour: "2-digit",
+          minute: "2-digit"
+        }
+      )
+
+  })
+
+  .then(() => {
+
+    input.value = "";
+
+    cancelReply();
+
+  })
+
+  .catch(err => {
+
+    alert(
+      "❌ Message could not be sent:\n" +
+      err.message
+    );
+
+  });
+
+};
+
+
+/* ================= SEND IMAGE ================= */
+
+window.sendImage = function (input) {
+
+  const file =
+    input.files[0];
+
+
+  if (!file) {
+    return;
+  }
+
+
+  /*
+     Limit image size to avoid putting huge
+     Base64 strings into Realtime Database.
+  */
+
+  if (file.size > 2 * 1024 * 1024) {
+
+    alert(
+      "❌ Image is too large. Please choose an image under 2 MB."
+    );
+
+    input.value = "";
+
+    return;
+
+  }
+
+
+  const reader =
+    new FileReader();
+
+
+  reader.onload = function (e) {
+
+    const imageData =
+      e.target.result;
+
+
+    push(chatRef, {
+
+      user: username,
+
+      text:
+        `<img src="${imageData}" class="chatImage" alt="Image">`,
+
+      time:
+        new Date().toLocaleTimeString(
+          [],
+          {
+            hour: "2-digit",
+            minute: "2-digit"
+          }
+        )
+
+    })
+
+    .then(() => {
+
+      input.value = "";
+
+    })
+
+    .catch(err => {
+
+      alert(
+        "❌ Image could not be sent:\n" +
+        err.message
+      );
+
+    });
+
   };
+
+
+  reader.readAsDataURL(file);
+
+};
+
+
+/* ================= CANCEL REPLY ================= */
+
+window.cancelReply = function () {
+
+  document.getElementById("replyBox").style.display =
+    "none";
+
+  document.getElementById("replyUser").textContent =
+    "";
+
+  document.getElementById("replyText").textContent =
+    "";
+
+};
+
+
+/* ================= THEME ================= */
+
+window.toggleTheme = function () {
+
+  document.body.classList.toggle("light");
+
+};
+
+
+/* ================= CLEAR CHAT ================= */
+
+window.clearAllMessages = function () {
+
+  if (
+    !confirm("⚠️ Delete all chat messages?")
+  ) {
+
+    return;
+
+  }
+
+
+  remove(chatRef)
+
+    .then(() => {
+
+      document.getElementById("chatBox").innerHTML =
+        "";
+
+      alert("✅ All messages deleted!");
+
+    })
+
+    .catch(err => {
+
+      alert(
+        "❌ Error: " +
+        err.message
+      );
+
+    });
+
+};
+
+
+/* ================= HTML SECURITY ================= */
+
+function escapeHTML(str) {
+
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
+}
+
 </script>
 </body>
   </html>
